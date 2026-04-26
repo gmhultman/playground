@@ -1,0 +1,32 @@
+{
+  "name": "screensavers",
+  "version": "1.0.0",
+  "description": "Retro screensaver control panel",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win dir"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.playground.screensavers",
+    "productName": "Screensavers",
+    "files": [
+      "main.js",
+      "preload.js",
+      "preload-configure.js",
+      "Screensavers.html",
+      "resources/**",
+      "vendor/**"
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "Screensavers.exe"
+    }
+  }
+}

@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Elemental Wallpapers</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --ink: #f2eee6;
+    --dim: rgba(242,238,230,0.55);
+    --line: rgba(242,238,230,0.14);
+    --panel: rgba(18,16,14,0.55);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:#000; overflow:hidden;
+    font-family: 'Inter Tight', ui-sans-serif, system-ui, -apple-system, Helvetica, Arial, sans-serif;
+    color: var(--ink); -webkit-font-smoothing: antialiased; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; cursor: crosshair; }
+
+  /* ------- HUD ------- */
+  .hud { position:fixed; inset:0; pointer-events:none; z-index: 5; }
+  .hud > * { pointer-events: auto; }
+
+  /* clock + element label, top-left */
+  .brand {
+    position:absolute; top:22px; left:26px;
+    display:flex; align-items:baseline; gap:14px;
+    font-variant-numeric: tabular-nums;
+    mix-blend-mode: screen;
+    text-shadow: 0 1px 20px rgba(0,0,0,0.5);
+  }
+  .brand .clock { font-size: 44px; letter-spacing:-0.02em; font-weight: 500; }
+  .brand .meta  { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim); }
+  .brand .meta b { color: var(--ink); font-weight: 500; }
+
+  /* hint, bottom-left */
+  .hint {
+    position:absolute; bottom:22px; left:26px;
+    font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim);
+    mix-blend-mode: screen;
+  }
+  .hint span { color: var(--ink); }
+
+  /* dock, bottom-center */
+  .dock {
+    position:absolute; bottom:22px; left:50%; transform:translateX(-50%);
+    display:flex; gap:6px; padding:8px;
+    opacity: 1; transition: opacity .35s ease, transform .35s ease;
+    background: var(--panel);
+    border:1px solid var(--line);
+    border-radius: 16px;
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  .dock button {
+    position:relative;
+    width: 58px; height: 58px; border-radius: 12px;
+    border:1px solid transparent;
+    background: transparent; color: var(--ink);
+    cursor:pointer; padding:0;
+    transition: transform .15s ease, background .2s ease, border-color .2s ease;
+    font-family: inherit;
+  }
+  .dock button:hover { transform: translateY(-3px); background: rgba(255,255,255,0.04); }
+  .dock button.active { background: rgba(255,255,255,0.08); border-color: var(--line); }
+  .dock button .thumb {
+    position:absolute; inset:6px; border-radius: 8px; overflow:hidden;
+  }
+  .dock button .thumb::after {
+    content:''; position:absolute; inset:0; border-radius:inherit;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  .dock button .label {
+    position:absolute; top: -28px; left:50%; transform:translateX(-50%);
+    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--ink);
+    opacity: 0; transition: opacity .2s ease;
+    white-space: nowrap;
+    background: var(--panel); padding: 5px 9px; border-radius: 6px;
+    border: 1px solid var(--line);
+  }
+  .dock button:hover .label, .dock button.active .label { opacity: 1; }
+  body.labels-always .dock button .label { opacity: 1; }
+  body.hud-hidden .brand, body.hud-hidden .stats, body.hud-hidden .hint,
+  body.hud-hidden .corner { opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .dock button.active::before {
+    content:''; position:absolute; bottom:-6px; left:50%; transform:translateX(-50%);
+    width: 4px; height: 4px; border-radius: 50%; background: var(--ink);
+  }
+
+  /* thumbnail swatches */
+  .tEarth     { background: radial-gradient(circle at 30% 40%, #c6864a, #5a2a14 55%, #0d0808); }
+  .tWind      { background: linear-gradient(120deg, #0a1628, #3a6a9a 55%, #dfeaf5); }
+  .tFire      { background: radial-gradient(circle at 50% 85%, #ffd36b, #f15a22 40%, #1a0604 75%); }
+  .tLightning { background: linear-gradient(180deg, #090a18 0%, #2a2c55 50%, #b9c3ff 55%, #1a1d36 60%); }
+  .tWater     { background: radial-gradient(circle at 50% 50%, #9be6ef, #1e6980 45%, #03121c); }
+
+  /* top-right stat panel */
+  .stats {
+    position:absolute; top:22px; right:26px;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim);
+    text-align:right; mix-blend-mode: screen;
+  }
+  .stats b { color: var(--ink); font-weight: 500; }
+
+  /* subtle first-run prompt */
+  .prompt {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase;
+    color: var(--ink); opacity: 0; pointer-events:none;
+    padding: 8px 14px; border:1px solid var(--line); border-radius: 999px;
+    background: var(--panel); backdrop-filter: blur(10px);
+    transition: opacity .8s ease;
+  }
+  .prompt.show { opacity: 0.9; }
+
+  /* ------- Tweaks panel ------- */
+  .tweaks {
+    position:absolute; bottom:100px; right:26px;
+    width: 280px; padding: 16px 18px 18px;
+    background: var(--panel); border:1px solid var(--line); border-radius: 14px;
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+    display: none;
+  }
+  body.chrome-hidden .dock { opacity: 0; transform: translateX(-50%) translateY(10px); pointer-events: none; }
+  body.chrome-hidden .tweaks { opacity: 0; transform: translateY(10px); pointer-events: none; }
+  .tweaks { transition: opacity .35s ease, transform .35s ease; }
+
+  .tweaks.show { display: block; }
+  .tweaks h3 {
+    margin: 0 0 14px; font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase;
+    color: var(--ink); font-weight: 500;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .tweaks h3 .dot { width:5px; height:5px; border-radius:50%; background:#7fd08a; }
+  .tweaks .row {
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 8px 0; border-top: 1px solid var(--line);
+  }
+  .tweaks .row:first-of-type { border-top: none; padding-top: 4px; }
+  .tweaks .row label {
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim);
+  }
+  .seg {
+    display:inline-flex; background: rgba(255,255,255,0.04);
+    border:1px solid var(--line); border-radius: 8px; overflow:hidden;
+  }
+  .seg button {
+    background: transparent; color: var(--dim);
+    border: none; padding: 5px 10px; font-size: 10px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    font-family: inherit; cursor: pointer;
+  }
+  .seg button.active { background: rgba(255,255,255,0.1); color: var(--ink); }
+  .seg button + button { border-left: 1px solid var(--line); }
+
+  .tog {
+    position: relative; width: 34px; height: 18px; border-radius: 999px;
+    background: rgba(255,255,255,0.08); border:1px solid var(--line);
+    cursor: pointer; transition: background .2s;
+  }
+  .tog::after {
+    content:''; position:absolute; top:2px; left:2px;
+    width:12px; height:12px; border-radius:50%; background:var(--ink);
+    transition: transform .2s;
+  }
+  .tog.on { background: rgba(127,208,138,0.3); }
+  .tog.on::after { transform: translateX(16px); }
+
+  /* corner crosshair marks */
+  .corner { position:absolute; width:14px; height:14px; border-color: var(--dim); }
+  .corner.tl { top:14px; left:14px; border-top:1px solid; border-left:1px solid; }
+  .corner.tr { top:14px; right:14px; border-top:1px solid; border-right:1px solid; }
+  .corner.bl { bottom:14px; left:14px; border-bottom:1px solid; border-left:1px solid; }
+  .corner.br { bottom:14px; right:14px; border-bottom:1px solid; border-right:1px solid; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <canvas id="gl"></canvas>
+
+  <div class="hud">
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+
+    <div class="brand">
+      <div class="clock" id="clock">00:00</div>
+      <div class="meta">SYS · <b id="elementName">Earth</b></div>
+    </div>
+
+    <div class="stats">
+      <div>COORD <b id="coord">0.00, 0.00</b></div>
+      <div>FPS <b id="fps">60</b></div>
+    </div>
+
+    <div class="hint" id="hint"><span>Move</span> to shape · <span>Click</span> to disturb</div>
+
+    <div class="prompt" id="prompt">Move your cursor</div>
+
+    <div class="tweaks" id="tweaks">
+      <h3>Tweaks <span class="dot"></span></h3>
+      <div class="row">
+        <label>Clock</label>
+        <div class="seg" data-key="clockFormat">
+          <button data-val="12">12h</button>
+          <button data-val="24">24h</button>
+        </div>
+      </div>
+      <div class="row">
+        <label>Seconds</label>
+        <div class="tog" data-key="clockSeconds"></div>
+      </div>
+      <div class="row">
+        <label>HUD</label>
+        <div class="tog" data-key="hudVisible"></div>
+      </div>
+      <div class="row">
+        <label>Dock labels</label>
+        <div class="seg" data-key="dockLabels">
+          <button data-val="hover">Hover</button>
+          <button data-val="always">Always</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dock" id="dock"></div>
+  </div>
+
+<script src="shaders.js"></script>
+<script>
+  // Tweakable defaults — host rewrites this block on disk when user changes settings
+  const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+    "clockFormat": "12",
+    "clockSeconds": false,
+    "hudVisible": true,
+    "dockLabels": "hover"
+  }/*EDITMODE-END*/;
+</script>
+<script>
+(() => {
+  const canvas = document.getElementById('gl');
+  const gl = canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false });
+  if (!gl) { document.body.innerHTML = '<p style="color:#fff;padding:40px">WebGL not available</p>'; return; }
+
+  // ---- Tweaks state
+  const tweaks = Object.assign({}, TWEAK_DEFAULTS);
+  function applyTweaks() {
+    document.body.classList.toggle('labels-always', tweaks.dockLabels === 'always');
+    document.body.classList.toggle('hud-hidden', !tweaks.hudVisible);
+    // reflect into panel controls
+    document.querySelectorAll('.tweaks .seg').forEach(seg => {
+      const k = seg.dataset.key;
+      seg.querySelectorAll('button').forEach(b =>
+        b.classList.toggle('active', String(tweaks[k]) === b.dataset.val));
+    });
+    document.querySelectorAll('.tweaks .tog').forEach(t => {
+      t.classList.toggle('on', !!tweaks[t.dataset.key]);
+    });
+    if (typeof startClock === 'function' && typeof clockEl !== 'undefined') startClock();
+  }
+  function setTweak(key, val) {
+    tweaks[key] = val;
+    applyTweaks();
+    try { window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [key]: val } }, '*'); } catch(e){}
+  }
+
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  function resize() {
+    canvas.width  = Math.floor(window.innerWidth  * DPR);
+    canvas.height = Math.floor(window.innerHeight * DPR);
+    gl.viewport(0,0,canvas.width,canvas.height);
+  }
+  window.addEventListener('resize', resize); resize();
+
+  // fullscreen quad
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(s), src);
+      throw new Error('shader');
+    }
+    return s;
+  }
+  function program(frag) {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, window.SHADERS.VERT));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, frag));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      console.error(gl.getProgramInfoLog(p));
+      throw new Error('link');
+    }
+    return p;
+  }
+
+  // Compile all programs
+  const progs = {};
+  for (const key of ['earth','wind','fire','lightning','water']) {
+    const P = program(window.SHADERS[key].frag);
+    progs[key] = {
+      prog: P,
+      loc: {
+        a_pos:   gl.getAttribLocation(P, 'a_pos'),
+        u_time:  gl.getUniformLocation(P, 'u_time'),
+        u_res:   gl.getUniformLocation(P, 'u_res'),
+        u_mouse: gl.getUniformLocation(P, 'u_mouse'),
+        u_click: gl.getUniformLocation(P, 'u_click'),
+        u_vel:   gl.getUniformLocation(P, 'u_vel'),
+      }
+    };
+  }
+
+  // ---- state
+  const STORAGE = 'wallpaper-element';
+  let current = localStorage.getItem(STORAGE) || 'earth';
+  let mouse = { x: 0.5, y: 0.5 };
+  let target = { x: 0.5, y: 0.5 };
+  let vel = { x: 0, y: 0 };
+  let click = { x: 0.5, y: 0.5, t: -999 };
+  const t0 = performance.now();
+
+  canvas.addEventListener('pointermove', e => {
+    target.x = e.clientX / window.innerWidth;
+    target.y = 1.0 - e.clientY / window.innerHeight;
+    hidePrompt();
+  });  canvas.addEventListener('pointerdown', e => {
+    click.x = e.clientX / window.innerWidth;
+    click.y = 1.0 - e.clientY / window.innerHeight;
+    click.t = performance.now();
+  });
+
+  // ---- dock
+  const dock = document.getElementById('dock');
+  const elementName = document.getElementById('elementName');
+  const hint = document.getElementById('hint');
+  const thumbs = { earth:'tEarth', wind:'tWind', fire:'tFire', lightning:'tLightning', water:'tWater' };
+  const order = ['earth','wind','fire','lightning','water'];
+  for (const key of order) {
+    const b = document.createElement('button');
+    b.dataset.key = key;
+    b.innerHTML = `<span class="thumb ${thumbs[key]}"></span><span class="label">${window.SHADERS[key].name}</span>`;
+    b.addEventListener('click', () => select(key));
+    dock.appendChild(b);
+  }
+  function select(key) {
+    current = key;
+    localStorage.setItem(STORAGE, key);
+    dock.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.key === key));
+    elementName.textContent = window.SHADERS[key].name;
+    hint.innerHTML = window.SHADERS[key].hint
+      .replace(/Click/g, '<span>Click</span>')
+      .replace(/Move/g, '<span>Move</span>')
+      .replace(/Drag/g, '<span>Drag</span>');
+  }
+  select(current);
+
+  // keyboard 1..5
+  window.addEventListener('keydown', e => {
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= order.length) select(order[n-1]);
+  });
+
+  // ---- Tweaks panel wiring
+  document.querySelectorAll('.tweaks .seg').forEach(seg => {
+    seg.addEventListener('click', e => {
+      const btn = e.target.closest('button'); if (!btn) return;
+      let v = btn.dataset.val;
+      if (v === 'true') v = true; else if (v === 'false') v = false;
+      setTweak(seg.dataset.key, v);
+    });
+  });
+  document.querySelectorAll('.tweaks .tog').forEach(tog => {
+    tog.addEventListener('click', () => setTweak(tog.dataset.key, !tweaks[tog.dataset.key]));
+  });
+
+  // edit-mode protocol — register listener BEFORE announcing
+  const tweaksPanel = document.getElementById('tweaks');
+  window.addEventListener('message', e => {
+    const d = e.data || {};
+    if (d.type === '__activate_edit_mode')   tweaksPanel.classList.add('show');
+    if (d.type === '__deactivate_edit_mode') tweaksPanel.classList.remove('show');
+  });
+  try { window.parent.postMessage({ type: '__edit_mode_available' }, '*'); } catch(e){}
+
+  // clock
+  const clockEl = document.getElementById('clock');
+  function tickClock() {
+    const d = new Date();
+    let hh = d.getHours();
+    let suffix = '';
+    if (tweaks.clockFormat === '12') {
+      suffix = hh >= 12 ? ' PM' : ' AM';
+      hh = hh % 12; if (hh === 0) hh = 12;
+    }
+    const HH = String(hh).padStart(2,'0');
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    const ss = tweaks.clockSeconds ? ':' + String(d.getSeconds()).padStart(2,'0') : '';
+    clockEl.textContent = `${HH}:${mm}${ss}${suffix}`;
+  }
+  let clockInterval;
+  function startClock() {
+    if (!clockEl) return;
+    tickClock();
+    clearInterval(clockInterval);
+    clockInterval = setInterval(tickClock, tweaks.clockSeconds ? 1000 : 5000);
+  }
+  applyTweaks();
+
+  // ---- Auto-hide chrome (dock + tweaks panel) on idle
+  let idleTimer;
+  const IDLE_MS = 2200;
+  function showChrome() {
+    document.body.classList.remove('chrome-hidden');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => document.body.classList.add('chrome-hidden'), IDLE_MS);
+  }
+  window.addEventListener('pointermove', showChrome, { passive: true });
+  window.addEventListener('pointerdown', showChrome, { passive: true });
+  window.addEventListener('keydown', showChrome);
+  const dockEl = document.getElementById('dock');
+  const tweaksEl = document.getElementById('tweaks');
+  [dockEl, tweaksEl].forEach(el => {
+    el.addEventListener('pointerenter', () => {
+      clearTimeout(idleTimer);
+      document.body.classList.remove('chrome-hidden');
+    });
+    el.addEventListener('pointerleave', showChrome);
+  });
+  showChrome();
+
+  // coord + fps
+  const coordEl = document.getElementById('coord');
+  const fpsEl = document.getElementById('fps');
+  let fpsSamples = [], lastT = performance.now();
+
+  // prompt
+  const promptEl = document.getElementById('prompt');
+  let promptShown = false;
+  setTimeout(() => { if (!promptShown) promptEl.classList.add('show'); }, 1200);
+  function hidePrompt(){ if (!promptShown){ promptShown = true; promptEl.classList.remove('show'); } }
+
+  // render
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  function frame(now) {
+    // smooth mouse + compute velocity
+    const sx = (target.x - mouse.x) * 0.12;
+    const sy = (target.y - mouse.y) * 0.12;
+    vel.x = sx; vel.y = sy;
+    mouse.x += sx; mouse.y += sy;
+
+    const dt = now - lastT; lastT = now;
+    fpsSamples.push(1000/Math.max(dt,1));
+    if (fpsSamples.length > 30) fpsSamples.shift();
+
+    const p = progs[current];
+    gl.useProgram(p.prog);
+    gl.enableVertexAttribArray(p.loc.a_pos);
+    gl.vertexAttribPointer(p.loc.a_pos, 2, gl.FLOAT, false, 0, 0);
+    gl.uniform1f(p.loc.u_time, (now - t0) * 0.001);
+    gl.uniform2f(p.loc.u_res, canvas.width, canvas.height);
+    gl.uniform2f(p.loc.u_mouse, mouse.x, mouse.y);
+    gl.uniform2f(p.loc.u_vel, vel.x, vel.y);
+    const ct = (now - click.t) * 0.001;
+    gl.uniform3f(p.loc.u_click, click.x, click.y, Math.min(ct, 20));
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    // update hud occasionally
+    if (Math.floor(now/100) !== frame._last) {
+      frame._last = Math.floor(now/100);
+      coordEl.textContent = `${mouse.x.toFixed(2)}, ${mouse.y.toFixed(2)}`;
+      const avg = fpsSamples.reduce((a,b)=>a+b,0) / Math.max(fpsSamples.length,1);
+      fpsEl.textContent = Math.round(avg);
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

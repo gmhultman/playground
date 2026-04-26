@@ -1,0 +1,27 @@
+# Claude Code local settings (contains machine-specific paths and permissions)
+.claude/
+
+# Node dependencies — run `npm install` to restore
+node_modules/
+
+# Electron build artifacts (binaries, DLLs, compiled exe)
+dist/
+
+# AI design chat transcripts
+**/chats/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
