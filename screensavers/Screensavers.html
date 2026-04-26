@@ -307,10 +307,23 @@
   <div class="exit-hint">click or press any key to exit</div>
 </div>
 
-<script src="vendor/react.min.js"></script>
-<script src="vendor/react-dom.min.js"></script>
-<script src="vendor/babel.min.js"></script>
+<!-- Debug overlay — visible only in screensaver mode, removed on success -->
+<div id="ss-dbg" style="display:none;position:fixed;top:0;left:0;right:0;padding:14px 16px;background:rgba(0,0,0,0.85);color:#0f0;font:13px ui-monospace,monospace;z-index:99999;white-space:pre-wrap;pointer-events:none;"></div>
 <script>
+(function(){
+  var p=new URLSearchParams(location.search);
+  if(p.get('mode')!=='screensaver') return;
+  var el=document.getElementById('ss-dbg'); el.style.display='block';
+  window._dbg=function(msg){ el.textContent+=msg+'\n'; };
+  window._dbg('HTML loaded — waiting for vendor scripts...');
+})();
+</script>
+
+<script src="vendor/react.min.js" onerror="window._dbg&&window._dbg('ERROR: react.min.js failed to load')"></script>
+<script src="vendor/react-dom.min.js" onerror="window._dbg&&window._dbg('ERROR: react-dom.min.js failed to load')"></script>
+<script src="vendor/babel.min.js" onerror="window._dbg&&window._dbg('ERROR: babel.min.js failed to load')"></script>
+<script>
+if(window._dbg) window._dbg('vendor scripts loaded — running init...');
 window.addEventListener('error', function(e){
   if (document.querySelector('.err-bar')) return;
   var d = document.createElement('div');
@@ -1301,10 +1314,9 @@ window.addEventListener('error', function(e){
       const P_W=P_IMG+P_PAD*2;   // 238
       const P_H=P_IMG+P_PAD+P_BOT; // 268
 
-      // Image loading
+      // Image loading — on-demand only, freed after drawing to polCanvas
       const imgCache={};
       function loadImg(src){ if(!imgCache[src]){imgCache[src]=new Image();imgCache[src].src=src;} return imgCache[src]; }
-      imgPaths.forEach(loadImg);
 
       // Pool cycling
       let poolIdx=0;
@@ -1322,6 +1334,7 @@ window.addEventListener('error', function(e){
           const sc=Math.max(P_IMG/iw, P_IMG/ih);
           const sw=P_IMG/sc, sh=P_IMG/sc;
           try{ x.drawImage(img,(iw-sw)/2,(ih-sh)/2,sw,sh,P_PAD,P_PAD,P_IMG,P_IMG); }catch(e){}
+          delete imgCache[src]; // free Image object — pixel data now lives on polCanvas
         } else {
           x.fillStyle='#c8c0b4'; x.fillRect(P_PAD,P_PAD,P_IMG,P_IMG);
         }
@@ -1466,9 +1479,17 @@ window.addEventListener('error', function(e){
             ctx.drawImage(getPolCanvas(ph),-P_W/2,-P_H/2);
             ctx.restore();
           }
-          // Decay eaten photos
+          // Decay eaten photos and free their canvas memory
           for(let i=photos.length-1;i>=0;i--){
-            if(photos[i].eaten){ photos[i].eatRemoveTimer-=dt; if(photos[i].eatRemoveTimer<=0) photos.splice(i,1); }
+            if(photos[i].eaten){
+              photos[i].eatRemoveTimer-=dt;
+              if(photos[i].eatRemoveTimer<=0){
+                const dead=photos[i];
+                if(dead.polCanvas){dead.polCanvas.width=0;dead.polCanvas.height=0;dead.polCanvas=null;}
+                delete imgCache[dead.src];
+                photos.splice(i,1);
+              }
+            }
           }
           // Replenish: keep MAX_PH non-eaten photos
           const alive=photos.filter(p=>!p.eaten);
@@ -2610,10 +2631,12 @@ function buildAudio(ac, out, mod){
 }
 
 if (new URLSearchParams(location.search).get('mode') === 'screensaver') {
+  if(window._dbg) window._dbg('Babel script running — screensaver mode detected');
   const density   = +(localStorage.getItem('ss.density') || 0.5);
   const cycle     = localStorage.getItem('ss.cycle') === '1';
   const cycleMin  = +(localStorage.getItem('ss.cycleMin') || 30);
   const picFolder = localStorage.getItem('ss.picFolder') || '';
+  if(window._dbg) window._dbg(`selected=${localStorage.getItem('ss.selected')} picFolder=${picFolder||'(none)'} electronAPI=${!!window.electronAPI}`);
   const root      = document.getElementById('root');
   root.style.cssText = 'position:fixed;inset:0;background:#000;';
   document.getElementById('fs').remove();
@@ -2624,15 +2647,24 @@ if (new URLSearchParams(location.search).get('mode') === 'screensaver') {
   let imagePaths = [];
 
   function launchModule(i) {
+    if(window._dbg) window._dbg(`launchModule ${MODULE_ORDER[i]}`);
     if (instance) { try { instance.stop(); } catch(e){} }
     root.innerHTML = '';
     const extraOpts = (MODULE_ORDER[i] === 'clock' && imagePaths.length > 0) ? { imagePaths } : {};
-    instance = window.Screensavers.modules[MODULE_ORDER[i]]?.start(root, { density, ...extraOpts });
+    try {
+      instance = window.Screensavers.modules[MODULE_ORDER[i]]?.start(root, { density, ...extraOpts });
+      if(window._dbg) { window._dbg('module started OK — hiding debug overlay'); document.getElementById('ss-dbg').style.display='none'; }
+    } catch(err) {
+      if(window._dbg) window._dbg(`module start ERROR: ${err}`);
+    }
   }
 
   async function init() {
+    if(window._dbg) window._dbg('init() called');
     if (picFolder && window.electronAPI?.listImages) {
-      try { imagePaths = (await window.electronAPI.listImages(picFolder)) || []; } catch(e){}
+      if(window._dbg) window._dbg('calling listImages...');
+      try { imagePaths = (await window.electronAPI.listImages(picFolder)) || []; } catch(e){ if(window._dbg) window._dbg(`listImages error: ${e}`); }
+      if(window._dbg) window._dbg(`imagePaths count: ${imagePaths.length}`);
     }
     launchModule(idx);
     if (cycle) {

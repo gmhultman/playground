@@ -10,13 +10,21 @@ if (-not (Test-Path $source)) {
     exit 1
 }
 
-Write-Host "Copying files to $dest ..."
-if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
-Copy-Item $source $dest -Recurse
+Write-Host "Stopping any running screensaver processes ..."
+@("Screensavers.scr","Screensavers.exe") | ForEach-Object {
+    taskkill /F /IM $_ /T 2>$null | Out-Null
+}
+Start-Sleep -Milliseconds 800
 
-# Rename the exe to .scr so Windows recognises it as a screensaver
+Write-Host "Copying files to $dest ..."
+robocopy $source $dest /E /IS /IT /NFL /NDL /NJH /NJS | Out-Null
+
+# Ensure the binary is named .scr so Windows recognises it as a screensaver
 $exe = Join-Path $dest "Screensavers.exe"
-if (Test-Path $exe) { Rename-Item $exe "Screensavers.scr" }
+if (Test-Path $exe) {
+    if (Test-Path $scr) { Remove-Item $scr -Force }
+    Rename-Item $exe "Screensavers.scr"
+}
 
 Write-Host "Registering screensaver via registry ..."
 $key = "HKCU:\Control Panel\Desktop"
